@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: akela-verifix-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: VERIFIX_LOGIN
+        value: admin@akela
+      - key: VERIFIX_PASSWORD
+        sync: false
+      - key: VERIFIX_FILIAL_ID
+        value: "483143"
+      - key: VERIFIX_PROJECT_CODE
+        value: vhr
+      - key: VERIFIX_BASE_URL
+        value: https://app.verifix.com
+      - key: TEMPLATE_PATH
+        value: template.xlsx
+      - key: OUTPUT_DIR
+        value: reports
+      - key: PYTHON_VERSION
+        value: 3.14.3

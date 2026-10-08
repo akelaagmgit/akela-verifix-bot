@@ -1,0 +1,27 @@
+# secrets - hech qachon commit bo'lmasin
+.env
+session.json
+
+# hisobotlar va loglar (shaxsiy ma'lumotlar bo'lishi mumkin)
+reports/
+*.log
+*.xlsx
+!template.xlsx
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# local debug
+.playwright-mcp/
+audit*.txt
+RUN*.xlsx
+AUD*.xlsx
+CHECK*.xlsx
+FINAL*.xlsx
