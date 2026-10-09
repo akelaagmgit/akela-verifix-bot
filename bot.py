@@ -86,12 +86,14 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     """Asosiy menyu - inline tugmalar (doim ko'rinadi)"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Hisobot yaratish", callback_data="menu:report")],
+        [InlineKeyboardButton(text="🔍 O'tmaslik sabablari", callback_data="menu:failreasons")],
         [InlineKeyboardButton(text="ℹ️ Yordam", callback_data="menu:help")],
     ])
 
 
-def month_selection_keyboard(multi: bool = False, selected: set | None = None) -> InlineKeyboardMarkup:
-    """Oy tanlash klaviaturasi - multi tanlash uchun checkbox"""
+def month_selection_keyboard(multi: bool = False, selected: set | None = None,
+                             prefix: str = "month") -> InlineKeyboardMarkup:
+    """Oy tanlash klaviaturasi - multi tanlash uchun checkbox."""
     selected = selected or set()
     today = date.today()
     rows = []
@@ -108,7 +110,7 @@ def month_selection_keyboard(multi: bool = False, selected: set | None = None) -
             rows.append([InlineKeyboardButton(text=label, callback_data=f"month_toggle:{key}")])
         else:
             label = f"{MONTHS_UZ[m]} {y}"
-            rows.append([InlineKeyboardButton(text=label, callback_data=f"month:{key}")])
+            rows.append([InlineKeyboardButton(text=label, callback_data=f"{prefix}:{key}")])
     if multi:
         rows.append([InlineKeyboardButton(text="✅ Tayyor - F.I.Sh. kiriting", callback_data="month_done")])
     rows.append([back_button()])
@@ -139,7 +141,8 @@ async def cmd_start(msg: Message):
 async def cmd_help(msg: Message):
     await msg.answer(
         "📖 <b>Yordam</b>\n\n"
-        "📊 <b>Hisobot yaratish</b> - 1 oy tanlang, F.I.Sh. yozing, Excel oling\n\n"
+        "📊 <b>Hisobot yaratish</b> - 1 oy tanlang, F.I.Sh. yozing, Excel oling\n"
+        "🔍 <b>O'tmaslik sabablari</b> - oy tanlang, suhbat natijalari Excel oling\n\n"
         "Buyruqlar:\n"
         "/hisobot - oylik Excel hisobot\n"
         "/yordam - bu xabar",
@@ -166,10 +169,16 @@ async def cb_menu(call: CallbackQuery, state: FSMContext):
             "Qaysi oylar uchun hisobot tayyorlayman? (2-3 oy tanlang, keyin 'Tayyor' tugmasi)",
             reply_markup=month_selection_keyboard(multi=True, selected=set())
         )
+    elif action == "failreasons":
+        await call.message.edit_text(
+            "Qaysi oy uchun o'tmaslik sabablari hisoboti?",
+            reply_markup=month_selection_keyboard(prefix="fmonth")
+        )
     elif action == "help":
         await call.message.edit_text(
             "📖 <b>Yordam</b>\n\n"
-            "📊 <b>Hisobot yaratish</b> - 1 oy tanlang, F.I.Sh. yozing, Excel oling\n\n"
+            "📊 <b>Hisobot yaratish</b> - 1 oy tanlang, F.I.Sh. yozing, Excel oling\n"
+            "🔍 <b>O'tmaslik sabablari</b> - oy tanlang, suhbat natijalari Excel oling\n\n"
             "Buyruqlar:\n"
             "/hisobot - oylik Excel hisobot\n"
             "/yordam - bu xabar",
@@ -431,6 +440,40 @@ async def cmd_report(msg: Message):
     await msg.answer("Qaysi oy uchun hisobot tayyorlayman? (1 oy)", reply_markup=month_selection_keyboard(multi=False))
 
 
+async def cb_fail_month(call: CallbackQuery, state: FSMContext):
+    key = call.data.split(":")[1]
+    y, m = map(int, key.split("-"))
+    await call.answer()
+    wait = await call.message.answer(f"⏳ {MONTHS_UZ[m]} {y} uchun o'tmaslik sabablari yig'ilmoqda...")
+    try:
+        from otmaslik_builder import collect_fail_data, build_fail_report
+        client = get_client()
+        loop = asyncio.get_running_loop()
+        rows, info = await loop.run_in_executor(None, collect_fail_data, client, y, m)
+        out_dir = Path(settings.output_dir)
+        fname = f"Otmaslik_sabablari_{y}_{m:02d}.xlsx"
+        out_path = out_dir / fname
+        await loop.run_in_executor(
+            None, build_fail_report, "template_otmaslik.xlsx", str(out_path), rows)
+        caption = (
+            f"🔍 <b>{MONTHS_UZ[m]} {y} — suhbatdan o'tmaslik sabablari</b>\n"
+            f"• Suhbatga kelgan: {info['total']}\n"
+            f"• O'tgan: {info['passed']}, o'tmagan: {info['failed']}, jarayonda: {info['pending']}\n"
+            f"• Maosh sababi avtomatik: {info['wage_auto']} ta\n"
+            "Qolgan sabablarni Excel'da ochiladigan ro'yxatdan tanlang."
+        )
+        try:
+            await _send_document(call.message, str(out_path), caption, main_menu_keyboard())
+        except Exception:
+            await state.update_data(resend_path=str(out_path), resend_caption=caption)
+            await state.set_state(ReportFlow.resend)
+            await wait.edit_text("⚠️ Internet uzildi, hisobot tayyor. Aloqa tiklangach pastdagi tugmani bosing.", reply_markup=resend_keyboard())
+            return
+        await wait.delete()
+    except Exception:
+        await wait.edit_text("❌ Hisobot tayyorlanmadi (internet yoki Verifix aloqasi). Birozdan keyin qayta urinib ko'ring.", reply_markup=main_menu_keyboard())
+
+
 async def cmd_multi_report(msg: Message):
     await msg.answer("Qaysi oylar uchun hisobot tayyorlayman? (2-3 oy belgilang)", reply_markup=month_selection_keyboard(multi=True, selected=set()))
 
@@ -507,6 +550,7 @@ def main():
     dp.callback_query.register(cb_month_toggle, F.data.startswith("month_toggle:"))
     dp.callback_query.register(cb_month_done, F.data == "month_done")
     dp.callback_query.register(cb_month_single, F.data.startswith("month:"))
+    dp.callback_query.register(cb_fail_month, F.data.startswith("fmonth:"))
     dp.callback_query.register(cb_resend, F.data == "report:resend")
     dp.message.register(on_fio, ReportFlow.waiting_fio)
 
