@@ -26,12 +26,15 @@ WAGE_REASON = "Maosh kutilmasi mos kelmadi"
 
 
 def _parse_money(s) -> int | None:
+    """Pul formati: minglik ajratkichlar olib tashlanadi, diapazonda yuqori
+    chegara olinadi ('3-4 000 000' -> 4000000)."""
     import re
     if not s:
         return None
-    d = re.sub(r"\D", "", str(s))
+    t = re.sub(r"[.,\s]", "", str(s))
     try:
-        return int(d) if d else None
+        nums = [int(x) for x in re.findall(r"\d+", t)]
+        return max(nums) if nums else None
     except ValueError:
         return None
 
@@ -63,13 +66,22 @@ def collect_fail_data(client, y: int, m: int) -> tuple[list[dict], dict]:
         lim = vac_wage.get(str(x.get("vacancy_id")))
         if res == "O'tmadi" and exp and lim and exp > lim:
             reason = WAGE_REASON
+        ctx = [f"Hozir: {st}"]
+        if x.get("age"):
+            ctx.append(f"{x['age']} yosh")
+        exp = _parse_money(x.get("wage_expactation"))
+        lim = vac_wage.get(str(x.get("vacancy_id")))
+        if exp:
+            ctx.append(f"kutilma {exp:,}".replace(",", " "))
+        if lim:
+            ctx.append(f"vilka ~{lim:,}".replace(",", " "))
         rows.append({
             "sana": x["_created"],
             "fish": x.get("candidate_full_name") or x.get("candidate_name", ""),
             "lavozim": x.get("vacancy_name", "") or x.get("job_name", ""),
             "manba": CHAN_LABEL.get(str(x.get("channel_id")), "Boshqa"),
             "keldi": "Ha", "natija": res, "sabab": reason,
-            "izoh": f"Hozir: {st}",
+            "izoh": "; ".join(ctx),
         })
     rows.sort(key=lambda r: (r["sana"] is None, r["sana"]))
     info = {"total": len(rows),

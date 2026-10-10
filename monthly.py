@@ -212,12 +212,15 @@ def get_month_people(client: VerifixClient, y: int, m: int) -> tuple[list[dict],
 
 
 def _parse_money(s) -> int | None:
+    """Pul formati: minglik ajratkichlar (bo'shliq/nuqta/vergul) olib tashlanadi,
+    diapazon bo'lsa yuqori chegara olinadi ('3-4 000 000' -> 4000000)."""
     import re
     if not s:
         return None
-    d = re.sub(r"\D", "", str(s))
+    t = re.sub(r"[.,\s]", "", str(s))
     try:
-        return int(d) if d else None
+        nums = [int(x) for x in re.findall(r"\d+", t)]
+        return max(nums) if nums else None
     except ValueError:
         return None
 
