@@ -1,3 +1,0 @@
-sample reject id=221967
-load_candidate_info FAIL HTTPStatusError: Client error '404 Not Found' for url 'https://app.verifix.com/b/vhr/hrec/candidate/candidate_management:load_candidate_i
-rej-model ok
