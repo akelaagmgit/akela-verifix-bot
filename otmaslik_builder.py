@@ -39,9 +39,59 @@ def _parse_money(s) -> int | None:
         return None
 
 
+TEMPLATE_REASONS = [
+    "Lokatsiya mos kelmadi (uzoq)", "Ish grafigi mos kelmadi",
+    "Maosh kutilmasi mos kelmadi", "Bilimi yetarli emas",
+    "Tajribasi yo'q / kam", "Sohaga mos emas (boshqa yo'nalish)",
+    "Til bilmaydi (rus/ingliz)", "Muloqot / ko'rinish / motivatsiya past",
+    "Qiymatlar, jamoaga mos emas", "Nomzodning o'zi rad etdi",
+    "Hujjat / tekshiruvdan o'tmadi", "Boshqa (izoh bilan)",
+]
+
+
+def _norm_reason(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+_REASON_INDEX = {_norm_reason(x): x for x in TEMPLATE_REASONS}
+
+
+def _fetch_reject_map(client) -> dict:
+    """Rad etilganlar: candidate_id -> (sabab, yaratilgan sana)."""
+    cols = ["name", "candidate_id", "reject_reason_name", "vacancy_id", "created_on"]
+    out: dict = {}
+    try:
+        off = 0
+        total = None
+        from verifix_client import parse_verifix_date
+        while True:
+            j = client._ipost(
+                "/b/vhr/hrec/candidate/candidate_management:reject_candidates",
+                {"p": {"column": cols, "filter": ["candidate_kind", "=", "J"],
+                         "sort": ["name"], "offset": off, "limit": 100}})
+            if total is None:
+                total = j.get("count", 0)
+            data = j.get("data", [])
+            if not data:
+                break
+            for row in data:
+                try:
+                    out[str(row[1])] = (row[2] or "", parse_verifix_date(row[4]))
+                except Exception:
+                    pass
+            off += len(data)
+            if off >= (total or 0):
+                break
+    except Exception:
+        pass
+    return out
+
+
 def collect_fail_data(client, y: int, m: int) -> tuple[list[dict], dict]:
-    """Oyda yaratilgan + intervyuga yetgan kandidatlar."""
+    """Oyda yaratilgan + intervyuga yetgan kandidatlar.
+    Sabab ustuvorligi: Verifix'dagi rad sababi > maosh mos kelmasligi > bo'sh."""
     cands = client.get_all_candidates()
+    rej_map = _fetch_reject_map(client)
     vac_wage = {}
     try:
         for v in client.get_vacancy_table("O") + client.get_vacancy_table("C"):
@@ -49,6 +99,7 @@ def collect_fail_data(client, y: int, m: int) -> tuple[list[dict], dict]:
     except Exception:
         pass
     rows = []
+    n_verifix = 0
     for x in cands:
         if not (x.get("_created") and x["_created"].year == y and x["_created"].month == m):
             continue
@@ -62,10 +113,17 @@ def collect_fail_data(client, y: int, m: int) -> tuple[list[dict], dict]:
         else:
             res = ""
         reason = ""
-        exp = _parse_money(x.get("wage_expactation"))
-        lim = vac_wage.get(str(x.get("vacancy_id")))
-        if res == "O'tmadi" and exp and lim and exp > lim:
-            reason = WAGE_REASON
+        if res == "O'tmadi":
+            v_reason, _ = rej_map.get(str(x.get("candidate_id", "")), ("", None))
+            mapped = _REASON_INDEX.get(_norm_reason(v_reason))
+            if mapped:
+                reason = mapped
+                n_verifix += 1
+            else:
+                exp = _parse_money(x.get("wage_expactation"))
+                lim = vac_wage.get(str(x.get("vacancy_id")))
+                if exp and lim and exp > lim:
+                    reason = WAGE_REASON
         ctx = [f"Hozir: {st}"]
         if x.get("age"):
             ctx.append(f"{x['age']} yosh")
@@ -88,7 +146,8 @@ def collect_fail_data(client, y: int, m: int) -> tuple[list[dict], dict]:
             "passed": sum(1 for r in rows if r["natija"] == "O'tdi"),
             "failed": sum(1 for r in rows if r["natija"] == "O'tmadi"),
             "pending": sum(1 for r in rows if not r["natija"]),
-            "wage_auto": sum(1 for r in rows if r["sabab"])}
+            "wage_auto": sum(1 for r in rows if r["sabab"] == WAGE_REASON),
+            "verifix_auto": n_verifix}
     return rows, info
 
 

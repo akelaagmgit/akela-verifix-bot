@@ -358,8 +358,8 @@ async def cb_fail_month(call: CallbackQuery, state: FSMContext):
             f"🔍 <b>{MONTHS_UZ[m]} {y} — suhbatdan o'tmaslik sabablari</b>\n"
             f"• Suhbatga kelgan: {info['total']}\n"
             f"• O'tgan: {info['passed']}, o'tmagan: {info['failed']}, jarayonda: {info['pending']}\n"
-            f"• Maosh sababi avtomatik: {info['wage_auto']} ta\n"
-            f"• Sabab belgilanmagan: {info['failed'] - info['wage_auto']} ta — Excel'da G ustundan tanlang."
+            f"• Verifix sababi: {info.get('verifix_auto', 0)} ta, maosh sababi: {info['wage_auto']} ta\n"
+            f"• Sabab belgilanmagan: {info['failed'] - info['wage_auto'] - info.get('verifix_auto', 0)} ta — Excel'da G ustundan tanlang."
         )
         try:
             await _send_document(call.message, str(out_path), caption, main_menu_keyboard())
